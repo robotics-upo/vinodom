@@ -231,13 +231,13 @@ private:
                 tf2::fromMsg(tf, camBaseTf);
                 tfCamCatched_ = true;
 
-                // PATCH: Add camera to camera link because simulator does not include it
-                tf2::Matrix3x3 R(0,0,1,-1,0,0,0,-1,0);
-                tf2::Transform camLink, aux;
-                camLink.setIdentity();
-                camLink.setBasis(R);
-                aux = camBaseTf * camLink;
-                camBaseTf.setData(aux);
+                // // PATCH: Add camera to camera link because simulator does not include it
+                // tf2::Matrix3x3 R(0,0,1,-1,0,0,0,-1,0);
+                // tf2::Transform camLink, aux;
+                // camLink.setIdentity();
+                // camLink.setBasis(R);
+                // aux = camBaseTf * camLink;
+                // camBaseTf.setData(aux);
             } 
             catch (tf2::TransformException & ex) 
             {
