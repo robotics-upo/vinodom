@@ -18,18 +18,22 @@
 #include "tf2/exceptions.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+// #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 #include "tf2_msgs/msg/tf_message.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/imgproc.hpp> 
 #include <opencv2/highgui.hpp> 
 #include <opencv2/features2d.hpp> 
 #include <opencv2/calib3d/calib3d.hpp>
+#include <rclcpp/qos.hpp>
 #include <vector>
 #include <algorithm>
 #include "robustmatcher.hpp"
 
 using std::placeholders::_1;
+
+#define DEBUG_VINODOM 1
 
 
 /**
@@ -128,9 +132,9 @@ public:
 
 		// Topic subscription
         imgSub_ = this->create_subscription<sensor_msgs::msg::Image>(camTopic_+"/image_raw", 10, std::bind(&VinOdom::imageCallback, this, _1));
-        cInfoSub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(camTopic_+"/camera_info", 10, std::bind(&VinOdom::cInfoCallback, this, _1)); 
-        imuSub_ = this->create_subscription<sensor_msgs::msg::Imu>(imuTopic_, 10, std::bind(&VinOdom::imuCallback, this, _1));
-        altSub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(altTopic_, 10, std::bind(&VinOdom::altCallback, this, _1));
+        cInfoSub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(camTopic_+"/camera_info", rclcpp::SensorDataQoS(), std::bind(&VinOdom::cInfoCallback, this, _1)); 
+        imuSub_ = this->create_subscription<sensor_msgs::msg::Imu>(imuTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::imuCallback, this, _1));
+        altSub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(altTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::altCallback, this, _1));
 
         // Topic publication
         odomPub_ = this->create_publisher<nav_msgs::msg::Odometry>(odomTopic_, 10);
@@ -163,6 +167,7 @@ private:
      */
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg) 
     {
+    
         // Pre-catch transform from imu to base frame (this is done just once!)
 		if(!tfImuCatched_)
 		{
@@ -184,6 +189,9 @@ private:
         // Get orientation in base frame
         imuQ_ = imuBaseTf.getRotation() * tf2::Quaternion(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
         imuQ_.normalize();
+#if DEBUG_VINODOM == 1
+        RCLCPP_INFO_ONCE(this->get_logger(), "Have imu");
+#endif
         haveImu_ = true;
     }
 
@@ -196,6 +204,9 @@ private:
        if(msg->ranges[0] > msg->range_min && msg->ranges[0] < msg->range_max && haveImu_)
        {
             height_ = msg->ranges[0];
+#if DEBUG_VINODOM == 1
+            RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter");
+#endif
             haveAlt_ = true;
        }
     }
@@ -370,6 +381,9 @@ private:
             D_ = cv::Mat(msg->d.size(), 1, CV_64FC1, (void *)msg->d.data()).clone();
             imgSize_.width = msg->width;
             imgSize_.height = msg->height;
+#if DEBUG_VINODOM == 1
+            RCLCPP_INFO_ONCE(this->get_logger(), "Have calibration");
+#endif
             haveCalibration_ = true;
         }
     }
