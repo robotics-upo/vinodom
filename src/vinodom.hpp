@@ -322,10 +322,10 @@ private:
             odomMsg.pose.pose.position.x = kFrame_.tf.getOrigin().getX();
             odomMsg.pose.pose.position.y = kFrame_.tf.getOrigin().getY();
             odomMsg.pose.pose.position.z = kFrame_.tf.getOrigin().getZ();
-            odomMsg.pose.pose.orientation.x = imuQ_.getRotation().getX();
-            odomMsg.pose.pose.orientation.y = imuQ_.getRotation().getY();
-            odomMsg.pose.pose.orientation.z = imuQ_.getRotation().getZ();
-            odomMsg.pose.pose.orientation.w = imuQ_.getRotation().getW();
+            odomMsg.pose.pose.orientation.x = imuQ_.getX();
+            odomMsg.pose.pose.orientation.y = imuQ_.getY();
+            odomMsg.pose.pose.orientation.z = imuQ_.getZ();
+            odomMsg.pose.pose.orientation.w = imuQ_.getW();
             odomPub_->publish(odomMsg);
 
             return;
