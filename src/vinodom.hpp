@@ -106,7 +106,8 @@ public:
         this->declare_parameter<double>("init_x", 0.0);
         this->declare_parameter<double>("init_y", 0.0);
         this->declare_parameter<double>("init_z", 0.0);
-        this->declare_parameter<bool>("override_height_with_bar", true);
+        this->declare_parameter<bool>("override_height_with_bar", true);        
+        this->declare_parameter<bool>("start_landed", true);
 
         // Read parameters
         this->get_parameter("camera_topic", camTopic_);
@@ -126,6 +127,7 @@ public:
         this->get_parameter("init_y", initY_);
         this->get_parameter("init_z", initZ_);
         this->get_parameter("override_height_with_bar", overrideHeighWithBar_);
+        this->get_parameter("start_landed", startLanded_);
 
         // Check topic name format
         if(camTopic_.back() == '/')
@@ -145,6 +147,7 @@ public:
         haveKFrame_ = false;
         haveAlt_ = false;
         haveBar_ = false;
+        haveBarLanded_ = false;
 
 		// Topic subscription
         imgSub_ = this->create_subscription<sensor_msgs::msg::Image>(camTopic_+"/image_raw", 10, std::bind(&VinOdom::imageCallback, this, _1));
@@ -236,6 +239,11 @@ private:
     {
         barHeigh_ = 0.3048*145366.45*(1 - pow(msg->fluid_pressure*0.01/1013.25, 0.190284));
         haveBar_ = true;
+        if(!haveBarLanded_)
+        {
+            barHeighLanded_ = barHeigh_;
+            haveBarLanded_ = true;
+        }
 #if DEBUG_VINODOM == 1
             RCLCPP_INFO_ONCE(this->get_logger(), "Have Barometer");
 #endif
@@ -325,7 +333,7 @@ private:
         // We cannot compute odometry if we are bellow a given distance to the floor
         // due to camera focus blurring. In this case we just publish
         // the orientation from IMU and keep the estimated position whatever it is
-        if(planeDist < minPlaneDist_)
+        if(startLanded_ && barHeigh_-barHeighLanded_ < minPlaneDist_)
         {
             rclcpp::Clock myClock;
             nav_msgs::msg::Odometry odomMsg;
@@ -583,8 +591,8 @@ private:
     double rxImu_, ryImu_, rzImu_;
 
     // Altimeter data
-    bool haveAlt_, haveBar_;
-    double height_, barHeigh_;
+    bool haveAlt_, haveBar_, haveBarLanded_;
+    double height_, barHeigh_, barHeighLanded_;
 
     // Feature detection, extractor
     cv::Ptr<cv::FastFeatureDetector> fDetector_;   
@@ -599,7 +607,7 @@ private:
     int maxFeatures_, minMatches_, minScoreDetector_, keyFrameTh_; 
     std::string camTopic_, imuTopic_, altTopic_, odomTopic_, odomFrame_, baseFrame_, barTopic_; 
     double minPlaneDist_, initX_, initY_, initZ_;
-    bool overrideHeighWithBar_;
+    bool overrideHeighWithBar_, startLanded_;
 
     // Current odometry computation
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odomPub_;  
