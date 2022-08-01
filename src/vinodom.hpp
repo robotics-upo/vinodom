@@ -103,6 +103,10 @@ public:
         this->declare_parameter<int>("key_frame_th", 100);
         this->declare_parameter<bool>("show_matching", false);
         this->declare_parameter<double>("min_plane_dist", 1.0);
+        this->declare_parameter<double>("init_x", 0.0);
+        this->declare_parameter<double>("init_y", 0.0);
+        this->declare_parameter<double>("init_z", 0.0);
+        this->declare_parameter<bool>("override_height_with_bar", true);
 
         // Read parameters
         this->get_parameter("camera_topic", camTopic_);
@@ -118,6 +122,10 @@ public:
         this->get_parameter("key_frame_th", keyFrameTh_);
         this->get_parameter("show_matching", showMatching_);
         this->get_parameter("min_plane_dist", minPlaneDist_);
+        this->get_parameter("init_x", initX_);
+        this->get_parameter("init_y", initY_);
+        this->get_parameter("init_z", initZ_);
+        this->get_parameter("override_height_with_bar", overrideHeighWithBar_);
 
         // Check topic name format
         if(camTopic_.back() == '/')
@@ -128,6 +136,8 @@ public:
             altTopic_.pop_back();
         if(odomTopic_.back() == '/')
             odomTopic_.pop_back();
+        if(barTopic_.back() == '/')
+            barTopic_.pop_back();
 
         // init variables
         haveCalibration_ = false;
@@ -273,7 +283,7 @@ private:
         double planeDist = height_;
         if(height_ > barHeigh_)
             planeDist = barHeigh_;
-        
+                
         // Convert to OpenCV format 
         cv_bridge::CvImageConstPtr cvbImg;
         try
@@ -303,7 +313,10 @@ private:
             kFrame_.H = cv::Mat::eye(3, 3, CV_64FC1);
             kFrame_.height = planeDist;
             kFrame_.tf.setRotation(imuQ_);
-            kFrame_.tf.setOrigin(tf2::Vector3(0, 0, 0));
+            if(overrideHeighWithBar_)
+                kFrame_.tf.setOrigin(tf2::Vector3(initX_, initY_, barHeigh_));
+            else
+                kFrame_.tf.setOrigin(tf2::Vector3(initX_, initY_, initZ_));   
             haveKFrame_ = true;
 
             return;
@@ -381,6 +394,14 @@ private:
 
         // Loose coupled IMU integration (in base frame) to avoid orientation drifting
         odomTf.setRotation(imuQ_);
+
+        // Overrides Z estimation with barometric altitude
+        if(overrideHeighWithBar_)
+        {
+            tf2::Vector3 v = odomTf.getOrigin();
+            v.setZ(barHeigh_);
+            odomTf.setOrigin(v);
+        }
 
         // Build odometry message and publish it
         rclcpp::Clock myClock;
@@ -577,7 +598,8 @@ private:
     // Node parameters
     int maxFeatures_, minMatches_, minScoreDetector_, keyFrameTh_; 
     std::string camTopic_, imuTopic_, altTopic_, odomTopic_, odomFrame_, baseFrame_, barTopic_; 
-    double minPlaneDist_;
+    double minPlaneDist_, initX_, initY_, initZ_;
+    bool overrideHeighWithBar_;
 
     // Current odometry computation
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odomPub_;  
