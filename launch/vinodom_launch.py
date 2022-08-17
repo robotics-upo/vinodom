@@ -6,11 +6,12 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('namespace', default_value='quadrotor_3'),
+        DeclareLaunchArgument('namespace', default_value='drone_2'),
         DeclareLaunchArgument('camera_topic', default_value='slot3'),
         DeclareLaunchArgument('imu_topic', default_value='imu/data'),
         DeclareLaunchArgument('altimeter_topic', default_value='slot6/scan'),
-        DeclareLaunchArgument('base_frame', default_value='quadrotor_3'),
+        DeclareLaunchArgument('barometer_topic', default_value='air_pressure'),
+        DeclareLaunchArgument('base_frame', default_value='drone_2'),
         DeclareLaunchArgument('show_matching', default_value='true'),
         Node(
             package='vinodom',
@@ -20,6 +21,7 @@ def generate_launch_description():
                         {'camera_topic': LaunchConfiguration('camera_topic')},
                         {'imu_topic': LaunchConfiguration('imu_topic')},
                         {'altimeter_topic': LaunchConfiguration('altimeter_topic')},
+                        {'barometer_topic': LaunchConfiguration('barometer_topic')},
                         {'base_frame': LaunchConfiguration('base_frame')},
                         {'show_matching': LaunchConfiguration('show_matching')}],
             output='screen',

@@ -32,6 +32,10 @@
 #include <algorithm>
 #include "robustmatcher.hpp"
 
+#include <limits>
+#include <Eigen/Core>
+#include <Eigen/Dense>
+
 using std::placeholders::_1;
 
 #define DEBUG_VINODOM 1
@@ -221,14 +225,54 @@ private:
      */
     void altCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg) 
     {
-       if(msg->ranges[0] > msg->range_min && msg->ranges[0] < msg->range_max)
-       {
-            height_ = msg->ranges[0]+0.62;
-            haveAlt_ = true;                
+    	height_ = std::numeric_limits<double>::max();
+    	std::vector<Eigen::Vector3d> points;
+    	
+    	
+    	for (unsigned int i=0; i < msg->ranges.size();i++)
+    	{
+    		double auxRange = msg->ranges[i];
+    		
+    		if(auxRange > minPlaneDist_ && auxRange < msg->range_max)
+    		{
+    			Eigen::Vector3d p;
+    		
+    			double angle = msg->angle_min + i* msg->angle_increment;
+    		
+    			p(0,0) = auxRange*std::cos(angle);
+    			p(1,0) = auxRange*std::sin(angle);
+    			p(2,0) = 0.0;
+    			
+    			points.push_back(p);
+    		
+       		if(auxRange < height_)
+       		{
+            			height_ = auxRange; //+0.62;
+            			haveAlt_ = true;                
+
+       		}
+       	}
+	}
+	
+	
+	//Fit 3D line to the points
+	std::pair < Eigen::Vector3d, Eigen::Vector3d > r = best_line_from_points(points);
+	
+	//Compute distance to the line. The sensor is at the origin
+	Eigen::Vector3d dx = r.first - (r.first.dot(r.second))*r.second;
+	double distance = std::sqrt(dx.dot(dx)) + 0.62;
+	
+	height_ = height_ + 0.62; //Check this number
+	
 #if DEBUG_VINODOM == 1
-            RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter");
+	if(haveAlt_)
+            	RCLCPP_INFO(this->get_logger(), "Have Altimeter %f",height_);
+            	
+        //std::cout << "Origin: " << r.first << std::endl;
+	//std::cout << "Axis: " << r.second << std::endl;
+	std::cout << "Distance: " << distance << std::endl;
 #endif
-       }
+	
     }
 
     /**
@@ -572,6 +616,24 @@ private:
 
         return totalFlow / matches.size();
     }
+    
+    
+   // template<class Vector3>
+	std::pair < Eigen::Vector3d, Eigen::Vector3d > best_line_from_points(const std::vector<Eigen::Vector3d> & c)
+	{
+		// copy coordinates to  matrix in Eigen format
+		size_t num_atoms = c.size();
+		Eigen::Matrix< Eigen::Vector3d::Scalar, Eigen::Dynamic, Eigen::Dynamic > centers(num_atoms, 3);
+		for (size_t i = 0; i < num_atoms; ++i) centers.row(i) = c[i];
+
+		Eigen::Vector3d origin = centers.colwise().mean();
+		Eigen::MatrixXd centered = centers.rowwise() - origin.transpose();
+		Eigen::MatrixXd cov = centered.adjoint() * centered;
+		Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(cov);
+		Eigen::Vector3d axis = eig.eigenvectors().col(2).normalized();
+
+		return std::make_pair(origin, axis);
+	}
 
     // Data subscribers
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cInfoSub_;
