@@ -14,7 +14,7 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/fluid_pressure.hpp"
-#include "nav_msgs/msg/odometry.hpp" 
+#include "nav_msgs/msg/odometry.hpp"
 #include "tf2/LinearMath/Transform.h"
 #include "tf2/exceptions.h"
 #include "tf2_ros/transform_listener.h"
@@ -23,9 +23,9 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 #include "tf2_msgs/msg/tf_message.hpp"
 #include "cv_bridge/cv_bridge.h"
-#include <opencv2/imgproc.hpp> 
-#include <opencv2/highgui.hpp> 
-#include <opencv2/features2d.hpp> 
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/features2d.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <rclcpp/qos.hpp>
 #include <vector>
@@ -36,7 +36,6 @@ using std::placeholders::_1;
 
 #define DEBUG_VINODOM 1
 
-
 /**
  * @brief Keypoint comparison auxiliar function to sort the sets of keypoints
  * according to their score
@@ -44,7 +43,7 @@ using std::placeholders::_1;
  * @param p2 The second keypoint
  * @return Boolean true if p1 > p2
  */
-bool score_comparator(const cv::KeyPoint& p1, const cv::KeyPoint& p2)
+bool score_comparator(const cv::KeyPoint &p1, const cv::KeyPoint &p2)
 {
     return p1.response > p2.response;
 }
@@ -55,7 +54,7 @@ bool score_comparator(const cv::KeyPoint& p1, const cv::KeyPoint& p2)
  * @param m2 The second match
  * @return Boolean true if m1 < m2
  */
-bool match_comparator(const cv::DMatch& m1, const cv::DMatch& m2)
+bool match_comparator(const cv::DMatch &m1, const cv::DMatch &m2)
 {
     return m1.distance < m2.distance;
 }
@@ -65,14 +64,13 @@ bool match_comparator(const cv::DMatch& m1, const cv::DMatch& m2)
  */
 struct KeyFrame
 {
-    cv::Mat img;                        // Image
-    std::vector<cv::KeyPoint> kpts;     // Detected key-points
-    cv::Mat desc;                       // Key-points descriptors
-    cv::Mat H;                          // Chained homography to the first keyframe
-    double height;                      // Plane distance
-    tf2::Transform tf;                  // Transform in base frame at this KF
+    cv::Mat img;                    // Image
+    std::vector<cv::KeyPoint> kpts; // Detected key-points
+    cv::Mat desc;                   // Key-points descriptors
+    cv::Mat H;                      // Chained homography to the first keyframe
+    double height;                  // Plane distance
+    tf2::Transform tf;              // Transform in base frame at this KF
 };
-
 
 /**
  * @class VinOdom
@@ -86,13 +84,13 @@ public:
      * @param nodeName Node name for publishing topics
      * @param cameraTopic Name of the camera
      */
-    VinOdom():
-        Node("vinodom")
-	{
+    VinOdom() : Node("vinodom")
+    {
         // Declare node parameters
         this->declare_parameter<std::string>("camera_topic", "/camera");
         this->declare_parameter<std::string>("imu_topic", "/imu");
         this->declare_parameter<std::string>("altimeter_topic", "/altimeter");
+        this->declare_parameter<std::string>("lidar3d_altimeter_topic", "/scan");
         this->declare_parameter<std::string>("barometer_topic", "/barometer");
         this->declare_parameter<std::string>("odom_topic", "/odom");
         this->declare_parameter<std::string>("odom_frame", "/odom");
@@ -106,13 +104,14 @@ public:
         this->declare_parameter<double>("init_x", 0.0);
         this->declare_parameter<double>("init_y", 0.0);
         this->declare_parameter<double>("init_z", 0.0);
-        this->declare_parameter<bool>("override_height_with_bar", true);        
+        this->declare_parameter<bool>("override_height_with_bar", true);
         this->declare_parameter<bool>("start_landed", true);
 
         // Read parameters
         this->get_parameter("camera_topic", camTopic_);
         this->get_parameter("imu_topic", imuTopic_);
         this->get_parameter("altimeter_topic", altTopic_);
+        this->get_parameter("lidar3d_altimeter_topic", lidar3dAltTopic_);
         this->get_parameter("barometer_topic", barTopic_);
         this->get_parameter("odom_topic", odomTopic_);
         this->get_parameter("odom_frame", odomFrame_);
@@ -130,15 +129,17 @@ public:
         this->get_parameter("start_landed", startLanded_);
 
         // Check topic name format
-        if(camTopic_.back() == '/')
+        if (camTopic_.back() == '/')
             camTopic_.pop_back();
-        if(imuTopic_.back() == '/')
+        if (imuTopic_.back() == '/')
             imuTopic_.pop_back();
-        if(altTopic_.back() == '/')
+        if (altTopic_.back() == '/')
             altTopic_.pop_back();
-        if(odomTopic_.back() == '/')
+        if (lidar3dAltTopic_.back() == '/')
+            lidar3dAltTopic_.pop_back();
+        if (odomTopic_.back() == '/')
             odomTopic_.pop_back();
-        if(barTopic_.back() == '/')
+        if (barTopic_.back() == '/')
             barTopic_.pop_back();
 
         // init variables
@@ -149,12 +150,13 @@ public:
         haveBar_ = false;
         haveBarLanded_ = false;
 
-		// Topic subscription
-        imgSub_ = this->create_subscription<sensor_msgs::msg::Image>(camTopic_+"/image_raw", 10, std::bind(&VinOdom::imageCallback, this, _1));
-        cInfoSub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(camTopic_+"/camera_info", rclcpp::SensorDataQoS(), std::bind(&VinOdom::cInfoCallback, this, _1)); 
+        // Topic subscription
+        imgSub_ = this->create_subscription<sensor_msgs::msg::Image>(camTopic_ + "/image_raw", 10, std::bind(&VinOdom::imageCallback, this, _1));
+        cInfoSub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(camTopic_ + "/camera_info", rclcpp::SensorDataQoS(), std::bind(&VinOdom::cInfoCallback, this, _1));
         imuSub_ = this->create_subscription<sensor_msgs::msg::Imu>(imuTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::imuCallback, this, _1));
         altSub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(altTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::altCallback, this, _1));
         barSub_ = this->create_subscription<sensor_msgs::msg::FluidPressure>(barTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::barCallback, this, _1));
+        lid3dAltSub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(lidar3dAltTopic_, rclcpp::SensorDataQoS(), std::bind(&VinOdom::lidar3dAltCallback, this, _1));
 
         // Topic publication
         odomPub_ = this->create_publisher<nav_msgs::msg::Odometry>(odomTopic_, 10);
@@ -166,8 +168,8 @@ public:
         tfListener_ = std::make_shared<tf2_ros::TransformListener>(*tfBuffer_);
 
         // Feature detection and extractor instantation
-        fDetector_ = cv::FastFeatureDetector::create(minScoreDetector_);   
-	    fExtractor_ = cv::ORB::create();	
+        fDetector_ = cv::FastFeatureDetector::create(minScoreDetector_);
+        fExtractor_ = cv::ORB::create();
 
         // Setup matcher
         matcher_.setRatioTest();
@@ -180,31 +182,30 @@ public:
     }
 
 private:
-	
     /**
-     * @brief IMU callback. It performs innertial integration and stores IMU data to be used by odometry 
+     * @brief IMU callback. It performs innertial integration and stores IMU data to be used by odometry
      * @param msg IMU message
      */
-    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg) 
+    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
     {
-    
+
         // Pre-catch transform from imu to base frame (this is done just once!)
-		if(!tfImuCatched_)
-		{
-            try 
+        if (!tfImuCatched_)
+        {
+            try
             {
                 geometry_msgs::msg::TransformStamped tf;
                 tf = tfBuffer_->lookupTransform(baseFrame_, msg->header.frame_id, tf2::TimePointZero);
                 tf2::fromMsg(tf, imuBaseTf);
                 tfImuCatched_ = true;
-            } 
-            catch (tf2::TransformException & ex) 
+            }
+            catch (tf2::TransformException &ex)
             {
                 RCLCPP_ERROR(this->get_logger(), "Could not transform %s to %s: %s",
-                            baseFrame_.c_str(), msg->header.frame_id.c_str(), ex.what());
+                             baseFrame_.c_str(), msg->header.frame_id.c_str(), ex.what());
                 return;
             }
-		}
+        }
 
         // Get orientation in base frame
         imuQ_ = imuBaseTf.getRotation() * tf2::Quaternion(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
@@ -216,36 +217,52 @@ private:
     }
 
     /**
-     * @brief Laser alt callback.  
+     * @brief Laser alt callback.
      * @param msg Laser message with altimeters
      */
-    void altCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg) 
+    void altCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     {
-       if(msg->ranges[0] > msg->range_min && msg->ranges[0] < msg->range_max)
-       {
-            height_ = msg->ranges[0]+0.62;
-            haveAlt_ = true;                
+        if (msg->ranges[0] > msg->range_min && msg->ranges[0] < msg->range_max)
+        {
+            height_ = msg->ranges[0] + 0.62;
+            haveAlt_ = true;
 #if DEBUG_VINODOM == 1
             RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter");
 #endif
-       }
+        }
     }
 
     /**
-     * @brief Barometer callback.  
+     * @brief Lidar3d alt callback.
      * @param msg Laser message with altimeters
      */
-    void barCallback(const sensor_msgs::msg::FluidPressure::SharedPtr msg) 
+    void lidar3dAltCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     {
-        barHeigh_ = 0.3048*145366.45*(1 - pow(msg->fluid_pressure*0.01/1013.25, 0.190284));
+        float laser_measurement = msg->ranges[900];
+        // Lidar3d laserScan has 1800 ranges. Using range 900 as center one
+        if (laser_measurement > msg->range_min && laser_measurement < msg->range_max)
+        {
+            height_ = laser_measurement + 0.62;
+            haveAlt_ = true;
+            RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter by Lidar3D");
+        }
+    }
+
+    /**
+     * @brief Barometer callback.
+     * @param msg Laser message with altimeters
+     */
+    void barCallback(const sensor_msgs::msg::FluidPressure::SharedPtr msg)
+    {
+        barHeigh_ = 0.3048 * 145366.45 * (1 - pow(msg->fluid_pressure * 0.01 / 1013.25, 0.190284));
         haveBar_ = true;
-        if(!haveBarLanded_)
+        if (!haveBarLanded_)
         {
             barHeighLanded_ = barHeigh_;
             haveBarLanded_ = true;
         }
 #if DEBUG_VINODOM == 1
-            RCLCPP_INFO_ONCE(this->get_logger(), "Have Barometer");
+        RCLCPP_INFO_ONCE(this->get_logger(), "Have Barometer");
 #endif
     }
 
@@ -253,16 +270,16 @@ private:
      * @brief RGB image callback
      * @param msg RGB image message
      */
-    void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) 
+    void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
-        // Check pre-conditions 
-        if(!haveCalibration_ || !haveImu_ || !haveAlt_ || !haveBar_)
+        // Check pre-conditions
+        if (!haveCalibration_ || !haveImu_ || !haveAlt_ || !haveBar_)
             return;
 
         // Pre-catch transform from camera to base frame (this is done just once!)
-		if(!tfCamCatched_)
-		{
-            try 
+        if (!tfCamCatched_)
+        {
+            try
             {
                 geometry_msgs::msg::TransformStamped tf;
                 tf = tfBuffer_->lookupTransform(baseFrame_, msg->header.frame_id, tf2::TimePointZero);
@@ -270,35 +287,35 @@ private:
                 tfCamCatched_ = true;
 
                 // PATCH: Add camera to camera link because simulator does not include it
-                tf2::Matrix3x3 R(0,0,1,-1,0,0,0,-1,0);
+                tf2::Matrix3x3 R(0, 0, 1, -1, 0, 0, 0, -1, 0);
                 tf2::Transform camLink, aux;
                 camLink.setIdentity();
                 camLink.setBasis(R);
                 aux = camBaseTf * camLink;
                 camBaseTf.setData(aux);
-            } 
-            catch (tf2::TransformException & ex) 
+            }
+            catch (tf2::TransformException &ex)
             {
                 RCLCPP_ERROR(this->get_logger(), "Could not transform %s to %s: %s",
-                            baseFrame_.c_str(), msg->header.frame_id.c_str(), ex.what());
+                             baseFrame_.c_str(), msg->header.frame_id.c_str(), ex.what());
                 return;
             }
-		}
+        }
 
         // Get the distance to plane. It will take the shoterst one between altimeter and barometer
         // Altimeter provides inf over the seawater.
         // Barometer should provide altitude over the sea level.
         double planeDist = height_;
-        if(height_ > barHeigh_)
+        if (height_ > barHeigh_)
             planeDist = barHeigh_;
-                
-        // Convert to OpenCV format 
+
+        // Convert to OpenCV format
         cv_bridge::CvImageConstPtr cvbImg;
         try
         {
             cvbImg = cv_bridge::toCvCopy(msg, "bgr8");
         }
-        catch(cv_bridge::Exception& e)
+        catch (cv_bridge::Exception &e)
         {
             RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
             return;
@@ -309,11 +326,11 @@ private:
         selectKeypoints(cvbImg->image, kpts);
 
         // Extract feature descritors from image
-		cv::Mat desc;
-		fExtractor_->compute(cvbImg->image, kpts, desc);  
+        cv::Mat desc;
+        fExtractor_->compute(cvbImg->image, kpts, desc);
 
         // Check we have a key frame
-        if(!haveKFrame_)
+        if (!haveKFrame_)
         {
             cvbImg->image.copyTo(kFrame_.img);
             desc.copyTo(kFrame_.desc);
@@ -321,10 +338,10 @@ private:
             kFrame_.H = cv::Mat::eye(3, 3, CV_64FC1);
             kFrame_.height = planeDist;
             kFrame_.tf.setRotation(imuQ_);
-            if(overrideHeighWithBar_)
+            if (overrideHeighWithBar_)
                 kFrame_.tf.setOrigin(tf2::Vector3(initX_, initY_, barHeigh_));
             else
-                kFrame_.tf.setOrigin(tf2::Vector3(initX_, initY_, initZ_));   
+                kFrame_.tf.setOrigin(tf2::Vector3(initX_, initY_, initZ_));
             haveKFrame_ = true;
 
             return;
@@ -333,7 +350,7 @@ private:
         // We cannot compute odometry if we are bellow a given distance to the floor
         // due to camera focus blurring. In this case we just publish
         // the orientation from IMU and keep the estimated position whatever it is
-        if(startLanded_ && barHeigh_-barHeighLanded_ < minPlaneDist_)
+        if (startLanded_ && barHeigh_ - barHeighLanded_ < minPlaneDist_)
         {
             rclcpp::Clock myClock;
             nav_msgs::msg::Odometry odomMsg;
@@ -355,7 +372,7 @@ private:
         // Match with respect to key-frame
         std::vector<cv::DMatch> matches;
         cv::Mat H = matcher_.match(kpts, desc, kFrame_.kpts, kFrame_.desc, matches);
-        if(H.empty())
+        if (H.empty())
         {
             cvbImg->image.copyTo(kFrame_.img);
             desc.copyTo(kFrame_.desc);
@@ -364,27 +381,27 @@ private:
             kFrame_.tf.setRotation(imuQ_);
             RCLCPP_INFO(this->get_logger(), "Tracking error. Resetting keyframe!");
 
-            return ;
+            return;
         }
-        H = H.inv();    // Homography inversion to compute chain to key-frame
+        H = H.inv(); // Homography inversion to compute chain to key-frame
 
         // Homography decomposition.
         std::vector<cv::Mat> Rs_decomp, ts_decomp, normals_decomp;
         int solutions = cv::decomposeHomographyMat(H, K_, Rs_decomp, ts_decomp, normals_decomp);
-        
+
         // We get the solution with the normal closest to (0,0,-1)
         int idx = -1;
         double min = 100000, d;
-        for (int i=0; i<solutions; i++)
+        for (int i = 0; i < solutions; i++)
         {
-            d = pow(normals_decomp[i].at<double>(0, 0), 2) + 
-                pow(normals_decomp[i].at<double>(1, 0), 2) + 
+            d = pow(normals_decomp[i].at<double>(0, 0), 2) +
+                pow(normals_decomp[i].at<double>(1, 0), 2) +
                 pow(normals_decomp[i].at<double>(2, 0) + 1, 2);
-            if(d < min)
+            if (d < min)
             {
                 idx = i;
                 min = d;
-            }   
+            }
         }
 
         // Compute odometry step with respecto to key-frame on camera frame
@@ -404,7 +421,7 @@ private:
         odomTf.setRotation(imuQ_);
 
         // Overrides Z estimation with barometric altitude
-        if(overrideHeighWithBar_)
+        if (overrideHeighWithBar_)
         {
             tf2::Vector3 v = odomTf.getOrigin();
             v.setZ(barHeigh_);
@@ -425,26 +442,26 @@ private:
         odomMsg.pose.pose.orientation.z = odomTf.getRotation().getZ();
         odomMsg.pose.pose.orientation.w = odomTf.getRotation().getW();
         odomPub_->publish(odomMsg);
-        
+
         // Visulize matching
-        if(showMatching_)
+        if (showMatching_)
         {
             cv::Mat imgMatches;
-            cv::drawMatches(cvbImg->image, kpts, kFrame_.img, kFrame_.kpts, matches, imgMatches, cv::Scalar::all(-1), 
-                            cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
-            cv::imshow("Matches", imgMatches );
+            cv::drawMatches(cvbImg->image, kpts, kFrame_.img, kFrame_.kpts, matches, imgMatches, cv::Scalar::all(-1),
+                            cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+            cv::imshow("Matches", imgMatches);
             cv::waitKey(5);
         }
 
         // Update key frame if matches are bellow a reasonable number
-        if(matches.size() < (long unsigned int)keyFrameTh_)
+        if (matches.size() < (long unsigned int)keyFrameTh_)
         {
             cvbImg->image.copyTo(kFrame_.img);
             desc.copyTo(kFrame_.desc);
             kFrame_.kpts = kpts;
-            kFrame_.H = kFrame_.H*H;
+            kFrame_.H = kFrame_.H * H;
             kFrame_.height = planeDist;
-            kFrame_.tf = odomTf;        
+            kFrame_.tf = odomTf;
         }
     }
 
@@ -452,9 +469,9 @@ private:
      * @brief Camera calibration info callback
      * @param msg Camera calibration message
      */
-    void cInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) 
+    void cInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
     {
-        if(!haveCalibration_)
+        if (!haveCalibration_)
         {
             K_ = cv::Mat(3, 3, CV_64FC1, (void *)msg->k.data()).clone();
             D_ = cv::Mat(msg->d.size(), 1, CV_64FC1, (void *)msg->d.data()).clone();
@@ -472,14 +489,14 @@ private:
      * @param[in] R OpenCV rotation matrix
      * @param[out] transform ROS tf2::Transform element
      */
-    void openCVToTf(const cv::Mat& t, const cv::Mat& R, tf2::Transform& tf)
+    void openCVToTf(const cv::Mat &t, const cv::Mat &R, tf2::Transform &tf)
     {
-        tf2::Vector3 translation_tf(t.at<double>(0,0), t.at<double>(1,0), t.at<double>(2,0));
+        tf2::Vector3 translation_tf(t.at<double>(0, 0), t.at<double>(1, 0), t.at<double>(2, 0));
 
         tf2::Matrix3x3 rotation_tf;
-        for(int i = 0; i < 3; ++i)
-            for(int j = 0; j < 3; ++j)
-                rotation_tf[i][j] = R.at<double>(i,j);
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                rotation_tf[i][j] = R.at<double>(i, j);
 
         tf.setOrigin(translation_tf);
         tf.setBasis(rotation_tf);
@@ -488,7 +505,7 @@ private:
     /** @brief Print on scree the content of a tf2 transform
      * @param[in] tf ROS tf2::Transform element
      */
-    void printTf(const tf2::Transform& tf)
+    void printTf(const tf2::Transform &tf)
     {
         tf2::Vector3 t = tf.getOrigin();
         tf2::Matrix3x3 R = tf.getBasis();
@@ -503,26 +520,26 @@ private:
      * @param srcKpts Sorted key-points
      * @param dstKpts Output bucketed key-points
      */
-    void kptsBucketing(std::vector<cv::KeyPoint>& srcKpts, std::vector<cv::KeyPoint>& dstKpts)
+    void kptsBucketing(std::vector<cv::KeyPoint> &srcKpts, std::vector<cv::KeyPoint> &dstKpts)
     {
-        const int maxFeatBuck = maxFeatures_/6;
+        const int maxFeatBuck = maxFeatures_ / 6;
         int buckets[6] = {maxFeatBuck, maxFeatBuck, maxFeatBuck, maxFeatBuck, maxFeatBuck, maxFeatBuck};
         dstKpts.clear();
-        for(size_t i=0; i<srcKpts.size(); i++)
+        for (size_t i = 0; i < srcKpts.size(); i++)
         {
             int id;
-            if(srcKpts[i].pt.y <= imgSize_.height/2)
+            if (srcKpts[i].pt.y <= imgSize_.height / 2)
                 id = 0;
             else
                 id = 3;
-            if(srcKpts[i].pt.x <= imgSize_.width/3)
+            if (srcKpts[i].pt.x <= imgSize_.width / 3)
                 id += 0;
-            else if(srcKpts[i].pt.x <= 2*imgSize_.width/3)
+            else if (srcKpts[i].pt.x <= 2 * imgSize_.width / 3)
                 id += 1;
             else
                 id += 2;
 
-            if(buckets[id] > 0)
+            if (buckets[id] > 0)
             {
                 buckets[id]--;
                 dstKpts.push_back(srcKpts[i]);
@@ -539,7 +556,7 @@ private:
     {
         // Detect key-points in the image
         std::vector<cv::KeyPoint> kpts_all;
-		fDetector_->detect(img, kpts_all);  
+        fDetector_->detect(img, kpts_all);
 
         // Sort keypoints according to their score
         std::sort(kpts_all.begin(), kpts_all.end(), score_comparator);
@@ -561,7 +578,7 @@ private:
         int idT, idQ;
         double xDiff, yDiff, totalFlow = 0.0;
 
-        for(size_t i=0; i<matches.size(); i++)
+        for (size_t i = 0; i < matches.size(); i++)
         {
             idT = matches[i].trainIdx;
             idQ = matches[i].queryIdx;
@@ -579,6 +596,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imuSub_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr altSub_;
     rclcpp::Subscription<sensor_msgs::msg::FluidPressure>::SharedPtr barSub_;
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lid3dAltSub_;
 
     // Camera calibration information
     cv::Size imgSize_;
@@ -595,22 +613,22 @@ private:
     double height_, barHeigh_, barHeighLanded_;
 
     // Feature detection, extractor
-    cv::Ptr<cv::FastFeatureDetector> fDetector_;   
-	cv::Ptr<cv::ORB> fExtractor_;	
-    RobustMatcher matcher_;        
+    cv::Ptr<cv::FastFeatureDetector> fDetector_;
+    cv::Ptr<cv::ORB> fExtractor_;
+    RobustMatcher matcher_;
 
     // Key-frame info
     bool haveKFrame_;
-    KeyFrame kFrame_;          
+    KeyFrame kFrame_;
 
     // Node parameters
-    int maxFeatures_, minMatches_, minScoreDetector_, keyFrameTh_; 
-    std::string camTopic_, imuTopic_, altTopic_, odomTopic_, odomFrame_, baseFrame_, barTopic_; 
+    int maxFeatures_, minMatches_, minScoreDetector_, keyFrameTh_;
+    std::string camTopic_, imuTopic_, altTopic_, odomTopic_, odomFrame_, baseFrame_, barTopic_, lidar3dAltTopic_;
     double minPlaneDist_, initX_, initY_, initZ_;
     bool overrideHeighWithBar_, startLanded_;
 
     // Current odometry computation
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odomPub_;  
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odomPub_;
 
     // Sensor TFs
     bool tfCamCatched_, tfImuCatched_;

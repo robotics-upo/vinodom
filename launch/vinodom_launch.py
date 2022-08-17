@@ -6,20 +6,22 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('namespace', default_value='quadrotor_1'),
-        DeclareLaunchArgument('camera_topic', default_value='slot3'),
+        DeclareLaunchArgument('namespace', default_value='drone_1'),
+        DeclareLaunchArgument('camera_topic', default_value='slot7'),
         DeclareLaunchArgument('imu_topic', default_value='imu/data'),
         DeclareLaunchArgument(
-            'odom_topic', default_value='visual_odometry/odom'),
-        DeclareLaunchArgument('altimeter_topic', default_value='slot6/scan'),
+            'odom_topic', default_value='sensor_measurements/odom'),
+        DeclareLaunchArgument('altimeter_topic', default_value='slot/scan'),
+        DeclareLaunchArgument('lidar3d_altimeter_topic',
+                              default_value='slot3/scan'),
         DeclareLaunchArgument('barometer_topic', default_value='air_pressure'),
-        DeclareLaunchArgument('min_plane_dist', default_value='5.0'),
+        DeclareLaunchArgument('min_plane_dist', default_value='2.0'),
         DeclareLaunchArgument("init_x", default_value='0.0'),
         DeclareLaunchArgument("init_y", default_value='0.0'),
         DeclareLaunchArgument("init_z", default_value='0.0'),
         DeclareLaunchArgument("override_height_with_bar",
                               default_value='true'),
-        DeclareLaunchArgument('base_frame', default_value='quadrotor_1'),
+        DeclareLaunchArgument('base_frame', default_value='drone_1'),
         DeclareLaunchArgument('show_matching', default_value='false'),
         Node(
             package='vinodom',
@@ -31,6 +33,8 @@ def generate_launch_description():
                         {'odom_topic': LaunchConfiguration('odom_topic')},
                         {'altimeter_topic': LaunchConfiguration(
                             'altimeter_topic')},
+                        {'lidar3d_altimeter_topic': LaunchConfiguration(
+                            'lidar3d_altimeter_topic')},
                         {'barometer_topic': LaunchConfiguration(
                             'barometer_topic')},
                         {'min_plane_dist': LaunchConfiguration(
