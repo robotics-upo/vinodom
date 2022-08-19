@@ -266,11 +266,13 @@ private:
 	
 #if DEBUG_VINODOM == 1
 	if(haveAlt_)
+	{
             	RCLCPP_INFO(this->get_logger(), "Have Altimeter %f",height_);
             	
-        //std::cout << "Origin: " << r.first << std::endl;
-	//std::cout << "Axis: " << r.second << std::endl;
-	std::cout << "Distance: " << distance << std::endl;
+        	//std::cout << "Origin: " << r.first << std::endl;
+		//std::cout << "Axis: " << r.second << std::endl;
+		std::cout << "Distance: " << distance << std::endl;
+	}
 #endif
 	
     }
@@ -381,7 +383,7 @@ private:
         {
             rclcpp::Clock myClock;
             nav_msgs::msg::Odometry odomMsg;
-            odomMsg.header.stamp = myClock.now();
+            odomMsg.header.stamp = msg->header.stamp;//myClock.now();
             odomMsg.header.frame_id = odomFrame_;
             odomMsg.child_frame_id = baseFrame_;
             odomMsg.pose.pose.position.x = kFrame_.tf.getOrigin().getX();
@@ -458,7 +460,7 @@ private:
         // Build odometry message and publish it
         rclcpp::Clock myClock;
         nav_msgs::msg::Odometry odomMsg;
-        odomMsg.header.stamp = myClock.now();
+        odomMsg.header.stamp = msg->header.stamp; //myClock.now();
         odomMsg.header.frame_id = odomFrame_;
         odomMsg.child_frame_id = baseFrame_;
         odomMsg.pose.pose.position.x = odomTf.getOrigin().getX();
