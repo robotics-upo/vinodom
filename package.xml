@@ -8,7 +8,8 @@
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  
+  <buildtool_depend>eigen3_cmake_module</buildtool_depend>
+    
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
@@ -21,6 +22,10 @@
   <depend>tf2_msgs</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  
+
+
+  <build_depend>eigen</build_depend>
   
   <export>
     <build_type>ament_cmake</build_type>
