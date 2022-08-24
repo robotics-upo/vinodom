@@ -234,7 +234,7 @@ private:
     	{
     		double auxRange = msg->ranges[i];
     		
-    		if(/*auxRange > minPlaneDist_ && */ auxRange < msg->range_max)
+    		if(auxRange > minPlaneDist_ && auxRange < msg->range_max)
     		{
     			Eigen::Vector3d p;
     		
@@ -254,6 +254,7 @@ private:
        	    }
 	    }
 	
+        /*
         //Fit 3D line to the points
         std::pair < Eigen::Vector3d, Eigen::Vector3d > r = best_line_from_points(points);
         
@@ -261,6 +262,7 @@ private:
         Eigen::Vector3d dx = r.first - (r.first.dot(r.second))*r.second;
         double distance = std::sqrt(dx.dot(dx)) + 0.62;
         height_ = height_ + 0.62; //Check this number
+        */
 	
 #if DEBUG_VINODOM == 1
 	    if(haveAlt_)
@@ -269,7 +271,7 @@ private:
                     
             //std::cout << "Origin: " << r.first << std::endl;
             //std::cout << "Axis: " << r.second << std::endl;
-            std::cout << "Distance: " << distance << std::endl;
+            //std::cout << "Distance: " << distance << std::endl;
 	    }
 #endif
     }
@@ -454,6 +456,12 @@ private:
         // Transform odometry step to base frame
         tf2::Transform stepBaseTf;
         stepBaseTf = camBaseTf * stepCamTf * camBaseTf.inverse();
+
+        // Check if step translation module exceed the maximum threholds
+        // This test is only done when the number of matches is small,
+        // so no keyframe is used
+        //if(stepBaseTf.getOrigin().length() > 0.75 && matches.size() < (long unsigned int)keyFrameTh_)
+        //    stepBaseTf.setOrigin(tf2::Vector3(0.0, 0.0, 0.0));
 
         // Concatenate with odometry stored in key-frame (which is in base frame)
         tf2::Transform odomTf;
