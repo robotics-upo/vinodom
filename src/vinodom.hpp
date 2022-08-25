@@ -40,6 +40,8 @@ using std::placeholders::_1;
 
 #define DEBUG_VINODOM 1
 
+#define G_ACC 9.8
+
 /**
  * @brief Keypoint comparison auxiliar function to sort the sets of keypoints
  * according to their score
@@ -149,6 +151,9 @@ public:
         // init variables
         haveCalibration_ = false;
         haveImu_ = false;
+        biasComputed_ = false;
+        biasCount_ = 0;
+        axBias_ = ayBias_ = azBias_ = 0.0;
         haveKFrame_ = false;
         haveAlt_ = false;
         haveBar_ = false;
@@ -192,6 +197,10 @@ private:
      */
     void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
     {
+        // Time between samples
+        static rclcpp::Time t = rclcpp::Time(msg->header.stamp);
+        uint64_t dT = (rclcpp::Time(msg->header.stamp) - t).nanoseconds();
+        t = rclcpp::Time(msg->header.stamp);
 
         // Pre-catch transform from imu to base frame (this is done just once!)
         if (!tfImuCatched_)
@@ -214,10 +223,57 @@ private:
         // Get orientation in base frame
         imuQ_ = imuBaseTf.getRotation() * tf2::Quaternion(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
         imuQ_.normalize();
+        haveImu_ = true;
 #if DEBUG_VINODOM == 1
         RCLCPP_INFO_ONCE(this->get_logger(), "Have imu");
 #endif
-        haveImu_ = true;
+
+        // We do not process acc if it is garbage
+        if(tf2::Vector3(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z).length() > 2*G_ACC)
+            return;
+
+        // Computes acc BIAS, simple way
+        if(!biasComputed_)
+        {
+            axBias_ +=  msg->linear_acceleration.x;
+            ayBias_ +=  msg->linear_acceleration.y;
+            azBias_ +=  msg->linear_acceleration.z - G_ACC;
+            biasCount_++;
+
+            if(biasCount_ == 100)
+            {
+                axBias_ = axBias_/100;
+                ayBias_ = ayBias_/100;
+                azBias_ = azBias_/100;
+                vx_ = 0.0;
+                vy_ = 0.0;
+                tx_ = initX_;
+                ty_ = initY_;
+                biasComputed_ = true;
+            }
+            else    
+                return;
+        }
+
+        // Integrate accelerations, removing computed biases
+        tf2::Transform innertialTf;
+        innertialTf.setRotation(imuQ_);
+        tf2::Vector3 acc = innertialTf * tf2::Vector3(msg->linear_acceleration.x-axBias_, msg->linear_acceleration.y-ayBias_, msg->linear_acceleration.z-azBias_);
+        //std::cout << "acc: " << acc.getX() << ", " << acc.getY() << ", " << acc.getZ() << std::endl;
+        //std::cout << "acc mod: " << acc.length() << std::endl;
+
+        // Double integrates acceleration
+        double delta = dT/1000000000.0, mod;
+        vx_ = vx_ + delta*acc.getX();
+        vy_ = vy_ + delta*acc.getY();
+        tx_ = tx_ + delta*vx_;
+        ty_ = ty_ + delta*vy_;
+        mod = sqrt(vx_*vx_ + vy_*vy_);
+        if(mod > 5.0)
+        {
+            vx_ = 5.0*vx_/mod;
+            vy_ = 5.0*vy_/mod;
+        }
     }
 
     /**
@@ -229,12 +285,11 @@ private:
     	height_ = std::numeric_limits<double>::max();
     	std::vector<Eigen::Vector3d> points;
     	
-    	
     	for (unsigned int i=0; i < msg->ranges.size();i++)
     	{
     		double auxRange = msg->ranges[i];
     		
-    		if(auxRange > minPlaneDist_ && auxRange < msg->range_max)
+    		if(auxRange > minPlaneDist_*0.8 && auxRange < msg->range_max)
     		{
     			Eigen::Vector3d p;
     		
@@ -246,11 +301,8 @@ private:
     			
     			points.push_back(p);
     		
-       		    if(auxRange < height_)
-       		    {
-            			height_ = auxRange; //+0.62;
-            			haveAlt_ = true;                
-       		    }
+       		    if(auxRange < height_ && angle > -0.34 && angle < 0.34)
+            		height_ = auxRange;
        	    }
 	    }
 	
@@ -260,19 +312,14 @@ private:
         
         //Compute distance to the line. The sensor is at the origin
         Eigen::Vector3d dx = r.first - (r.first.dot(r.second))*r.second;
-        double distance = std::sqrt(dx.dot(dx)) + 0.62;
-        height_ = height_ + 0.62; //Check this number
-        */
-	
+        double distance = std::sqrt(dx.dot(dx)) + 0.62;*/
+        
+        if(height_ < msg->range_max)
+            height_ += 0.62;
+        
+        haveAlt_ = true;
 #if DEBUG_VINODOM == 1
-	    if(haveAlt_)
-	    {
-            RCLCPP_INFO(this->get_logger(), "Have Altimeter %f",height_);
-                    
-            //std::cout << "Origin: " << r.first << std::endl;
-            //std::cout << "Axis: " << r.second << std::endl;
-            //std::cout << "Distance: " << distance << std::endl;
-	    }
+        RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter by Lidar2D");
 #endif
     }
 
@@ -282,14 +329,27 @@ private:
      */
     void lidar3dAltCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     {
-        float laser_measurement = msg->ranges[900];
-        // Lidar3d laserScan has 1800 ranges. Using range 900 as center one
-        if (laser_measurement > msg->range_min && laser_measurement < msg->range_max)
-        {
-            height_ = laser_measurement + 0.62;
-            haveAlt_ = true;
-            RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter by Lidar3D");
-        }
+        height_ = std::numeric_limits<double>::max();    
+
+    	for (unsigned int i=0; i < msg->ranges.size();i++)
+    	{
+    		double range = msg->ranges[i];
+            double angle = msg->angle_min + i* msg->angle_increment;
+    		
+    		if(range > minPlaneDist_*0.8 && range < msg->range_max && range < height_ &&
+               angle > -0.34 && angle < 0.34) // angle between -20 and 20 degrees 
+    		{
+            	height_ = range; 
+       	    }
+	    }
+        
+        if(height_ < msg->range_max)
+            height_ += 0.62;
+
+        haveAlt_ = true;
+#if DEBUG_VINODOM == 1
+        RCLCPP_INFO_ONCE(this->get_logger(), "Have Altimeter by Lidar3D");
+#endif
     }
 
     /**
@@ -349,9 +409,13 @@ private:
         // Get the distance to plane. It will take the shoterst one between altimeter and barometer
         // Altimeter provides inf over the seawater.
         // Barometer should provide altitude over the sea level.
+        bool overTheSea  = false;
         double planeDist = height_;
         if (height_ > barHeigh_)
+        {
             planeDist = barHeigh_;
+            overTheSea = true;
+        }
 
         // Convert to OpenCV format
         cv_bridge::CvImageConstPtr cvbImg;
@@ -393,17 +457,19 @@ private:
 
         // We cannot compute odometry if we are bellow a given distance to the floor
         // due to camera focus blurring. In this case we just publish
-        // the orientation from IMU and keep the estimated position whatever it is
+        // the orientation from IMU and integrates accelerations for pose update
         if (startLanded_ && barHeigh_ - barHeighLanded_ < minPlaneDist_)
         {
-            rclcpp::Clock myClock;
             nav_msgs::msg::Odometry odomMsg;
-            odomMsg.header.stamp = msg->header.stamp;//myClock.now();
+            odomMsg.header.stamp = msg->header.stamp;
             odomMsg.header.frame_id = odomFrame_;
             odomMsg.child_frame_id = baseFrame_;
-            odomMsg.pose.pose.position.x = kFrame_.tf.getOrigin().getX();
-            odomMsg.pose.pose.position.y = kFrame_.tf.getOrigin().getY();
-            odomMsg.pose.pose.position.z = kFrame_.tf.getOrigin().getZ();
+            odomMsg.pose.pose.position.x = tx_;
+            odomMsg.pose.pose.position.y = ty_;
+            if (overrideHeighWithBar_)
+                odomMsg.pose.pose.position.z = barHeigh_;
+            else
+                odomMsg.pose.pose.position.z = kFrame_.tf.getOrigin().getZ();
             odomMsg.pose.pose.orientation.x = imuQ_.getX();
             odomMsg.pose.pose.orientation.y = imuQ_.getY();
             odomMsg.pose.pose.orientation.z = imuQ_.getZ();
@@ -457,12 +523,6 @@ private:
         tf2::Transform stepBaseTf;
         stepBaseTf = camBaseTf * stepCamTf * camBaseTf.inverse();
 
-        // Check if step translation module exceed the maximum threholds
-        // This test is only done when the number of matches is small,
-        // so no keyframe is used
-        //if(stepBaseTf.getOrigin().length() > 0.75 && matches.size() < (long unsigned int)keyFrameTh_)
-        //    stepBaseTf.setOrigin(tf2::Vector3(0.0, 0.0, 0.0));
-
         // Concatenate with odometry stored in key-frame (which is in base frame)
         tf2::Transform odomTf;
         odomTf = kFrame_.tf * stepBaseTf;
@@ -478,10 +538,24 @@ private:
             odomTf.setOrigin(v);
         }
 
+        // If we are over the sea, we get the position diretly from the IMU integration
+        // Otherwise, we keep updated the position integration
+        if(overTheSea)
+        {
+            tf2::Vector3 v = odomTf.getOrigin();
+            v.setX(tx_);
+            v.setY(ty_);
+            odomTf.setOrigin(v);
+        }
+        else
+        {
+            tx_ = odomTf.getOrigin().getX();
+            ty_ = odomTf.getOrigin().getY();
+        }
+
         // Build odometry message and publish it
-        rclcpp::Clock myClock;
         nav_msgs::msg::Odometry odomMsg;
-        odomMsg.header.stamp = msg->header.stamp; //myClock.now();
+        odomMsg.header.stamp = msg->header.stamp; 
         odomMsg.header.frame_id = odomFrame_;
         odomMsg.child_frame_id = baseFrame_;
         odomMsg.pose.pose.position.x = odomTf.getOrigin().getX();
@@ -672,9 +746,11 @@ private:
     bool haveCalibration_;
 
     // IMU data
-    bool haveImu_;
+    bool haveImu_, biasComputed_;
     tf2::Quaternion imuQ_;
-    double rxImu_, ryImu_, rzImu_;
+    double axBias_, ayBias_, azBias_;
+    int biasCount_;
+    double vx_, vy_, tx_, ty_;
 
     // Altimeter data
     bool haveAlt_, haveBar_, haveBarLanded_;
