@@ -14,6 +14,7 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/fluid_pressure.hpp"
+#include "mbzirc_msgs/srv/set_pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2/LinearMath/Transform.h"
 #include "tf2/exceptions.h"
@@ -31,12 +32,12 @@
 #include <vector>
 #include <algorithm>
 #include "robustmatcher.hpp"
-
 #include <limits>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
 using std::placeholders::_1;
+using std::placeholders::_2;
 
 #define DEBUG_VINODOM 1
 
@@ -172,6 +173,9 @@ public:
         // Topic publication
         odomPub_ = this->create_publisher<nav_msgs::msg::Odometry>(odomTopic_, 10);
 
+        // Services
+        reserSvr = this->create_service<mbzirc_msgs::srv::SetPoseStamped>("reset", std::bind(&VinOdom::reset, this, _1, _2));
+
         // TF listening
         tfCamCatched_ = false;
         tfImuCatched_ = false;
@@ -193,6 +197,35 @@ public:
     }
 
 private:
+
+    /**
+     * @brief This service set the odom position to the pose passed as parameter, and reset inertial estimations 
+     * 
+     * @param request Read the PoseStamped with the new odom position 
+     * @param response Return the success status. True on success. False otherwise.
+     */
+    void reset(const std::shared_ptr<mbzirc_msgs::srv::SetPoseStamped::Request> request, std::shared_ptr<mbzirc_msgs::srv::SetPoseStamped::Response> response)
+    {
+        // Get init position
+        initX_ = request->pose.pose.position.x;
+        initY_ = request->pose.pose.position.y;
+        initZ_ = request->pose.pose.position.z;
+
+        // Reset the required control flags
+        haveKFrame_ = false;
+        haveBarLanded_ = false;
+
+        // Reset inertial estimations
+        vx_ = 0.0;
+        vy_ = 0.0;
+        tx_ = initX_;
+        ty_ = initY_;
+
+        // Prepare the response
+        response->success = true;
+    }
+
+
     /**
      * @brief IMU callback. It performs innertial integration and stores IMU data to be used by odometry
      * @param msg IMU message
@@ -760,6 +793,9 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr altSub_;
     rclcpp::Subscription<sensor_msgs::msg::FluidPressure>::SharedPtr barSub_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lid3dAltSub_;
+
+    // Reset service
+    rclcpp::Service<mbzirc_msgs::srv::SetPoseStamped>::SharedPtr reserSvr;
 
     // Camera calibration information
     cv::Size imgSize_;

@@ -16,7 +16,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-
+find_package(mbzirc_msgs REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3)
 
@@ -25,7 +25,7 @@ find_package(Eigen3)
 # find_package(<dependency> REQUIRED)
 
 add_executable(vinodom src/vinodom.cpp src/robustmatcher.hpp src/vinodom.hpp) 
-ament_target_dependencies(vinodom rclcpp sensor_msgs OpenCV cv_bridge tf2 tf2_ros tf2_msgs tf2_geometry_msgs nav_msgs Eigen3)
+ament_target_dependencies(vinodom rclcpp sensor_msgs OpenCV cv_bridge tf2 tf2_ros tf2_msgs tf2_geometry_msgs nav_msgs Eigen3 mbzirc_msgs)
 target_include_directories(vinodom PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
