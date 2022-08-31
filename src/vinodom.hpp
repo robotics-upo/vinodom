@@ -112,7 +112,7 @@ public:
         this->declare_parameter<double>("init_z", 0.0);
         this->declare_parameter<bool>("override_height_with_bar", true);
         this->declare_parameter<bool>("start_landed", true);
-        this->declare_parameter<bool>("pure_innertial", false);
+        this->declare_parameter<bool>("pure_inertial", false);
 
         // Read parameters
         this->get_parameter("camera_topic", camTopic_);
