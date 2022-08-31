@@ -24,6 +24,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_frame', default_value='drone_1'),
         DeclareLaunchArgument('show_matching', default_value='false'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('pure_inertial', default_value='false'),
         Node(
             package='vinodom',
             executable='vinodom',
@@ -47,7 +48,8 @@ def generate_launch_description():
                             'override_height_with_bar')},
                         {'base_frame': LaunchConfiguration('base_frame')},
                         {'show_matching': LaunchConfiguration('show_matching')},
-                        {'use_sim_time': LaunchConfiguration('use_sim_time')}],
+                        {'use_sim_time': LaunchConfiguration('use_sim_time')},
+                        {'pure_inertial': LaunchConfiguration('pure_inertial')}],
             output='screen',
             emulate_tty=True
         )
