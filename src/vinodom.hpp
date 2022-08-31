@@ -381,6 +381,25 @@ private:
         // Check pre-conditions
         if (!haveCalibration_ || !haveImu_ || !haveAlt_ || !haveBar_)
             return;
+        
+        // If the odom is pure inertial, just publish IMU integration
+        if(pureInertial_)
+        {
+            nav_msgs::msg::Odometry odomMsg;
+            odomMsg.header.stamp = msg->header.stamp; 
+            odomMsg.header.frame_id = odomFrame_;
+            odomMsg.child_frame_id = baseFrame_;
+            odomMsg.pose.pose.position.x = tx_;
+            odomMsg.pose.pose.position.y = ty_;
+            odomMsg.pose.pose.position.z = barHeigh_;
+            odomMsg.pose.pose.orientation.x = imuQ_.getX();
+            odomMsg.pose.pose.orientation.y = imuQ_.getY();
+            odomMsg.pose.pose.orientation.z = imuQ_.getZ();
+            odomMsg.pose.pose.orientation.w = imuQ_.getW();
+            odomPub_->publish(odomMsg);
+
+            return;
+        }
 
         // Pre-catch transform from camera to base frame (this is done just once!)
         if (!tfCamCatched_)
@@ -418,10 +437,6 @@ private:
             planeDist = barHeigh_;
             overTheSea = true;
         }
-
-        // If the odom is pure inertial, just set the overTheSea flag 
-        if(pureInertial_)
-            overTheSea = true;
 
         // Convert to OpenCV format
         cv_bridge::CvImageConstPtr cvbImg;
