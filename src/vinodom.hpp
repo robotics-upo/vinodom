@@ -112,6 +112,7 @@ public:
         this->declare_parameter<double>("init_z", 0.0);
         this->declare_parameter<bool>("override_height_with_bar", true);
         this->declare_parameter<bool>("start_landed", true);
+        this->declare_parameter<bool>("pure_innertial", false);
 
         // Read parameters
         this->get_parameter("camera_topic", camTopic_);
@@ -133,6 +134,7 @@ public:
         this->get_parameter("init_z", initZ_);
         this->get_parameter("override_height_with_bar", overrideHeighWithBar_);
         this->get_parameter("start_landed", startLanded_);
+        this->get_parameter("pure_inertial", pureInertial_);
 
         // Check topic name format
         if (camTopic_.back() == '/')
@@ -416,6 +418,10 @@ private:
             planeDist = barHeigh_;
             overTheSea = true;
         }
+
+        // If the odom is pure inertial, just set the overTheSea flag 
+        if(pureInertial_)
+            overTheSea = true;
 
         // Convert to OpenCV format
         cv_bridge::CvImageConstPtr cvbImg;
@@ -769,7 +775,7 @@ private:
     int maxFeatures_, minMatches_, minScoreDetector_, keyFrameTh_;
     std::string camTopic_, imuTopic_, altTopic_, odomTopic_, odomFrame_, baseFrame_, barTopic_, lidar3dAltTopic_;
     double minPlaneDist_, initX_, initY_, initZ_;
-    bool overrideHeighWithBar_, startLanded_;
+    bool overrideHeighWithBar_, startLanded_, pureInertial_;
 
     // Current odometry computation
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odomPub_;
